@@ -23,7 +23,7 @@ const BRAND = {
 const providerDefinitions = [
   { id:'tiktok', label:'TikTok', state:'CONNECTED_VIA_METRICOOL', mode:'Aggregator bridge', oauthEnv:null },
   { id:'facebook', label:'Facebook', state:'CONNECTED_VIA_METRICOOL', mode:'Aggregator bridge', oauthEnv:null },
-  { id:'instagram', label:'Instagram', state:'AUTHORIZATION_REQUIRED', mode:'Direct OAuth or supported aggregator', oauthEnv:'INSTAGRAM_OAUTH_URL' },
+  { id:'instagram', label:'Instagram', state:'BRIDGE_READY_NOT_VERIFIED', mode:'Metricool bridge', oauthEnv:null },
   { id:'x', label:'X', state:'AUTHORIZATION_REQUIRED', mode:'Direct OAuth', oauthEnv:'X_OAUTH_URL' },
   { id:'linkedin', label:'LinkedIn', state:'AUTHORIZATION_REQUIRED', mode:'Direct OAuth or supported aggregator', oauthEnv:'LINKEDIN_OAUTH_URL' },
   { id:'youtube', label:'YouTube', state:'AUTHORIZATION_REQUIRED', mode:'Google OAuth', oauthEnv:'YOUTUBE_OAUTH_URL' },
@@ -108,7 +108,7 @@ const html = `<!doctype html>
 </style></head><body>
 <header><div><div class="eyebrow">ROSS TAX PRO SOFTWARE CO.</div><h1>Social Intelligence & Engagement Center</h1><div class="sub">Hosted control plane · ChatGPT/MCP adapter · campaign execution visibility · SEO governance</div></div><div class="badge">HOSTED SERVICE ONLINE</div></header>
 <main>
-<div class="notice">Campaign scheduling is active through the connected Metricool brand. TikTok and Facebook are currently verified through the Metricool bridge. Other networks still require account-owner authorization.</div>
+<div class="notice">Campaign scheduling is active through the connected Metricool brand. TikTok and Facebook are currently verified through the Metricool bridge. Instagram adapter support is ready but the Instagram account is not yet verified by the current Metricool brand metadata. Other networks still require account-owner authorization.</div>
 <div class="grid">
 <div class="card"><span>Scheduled campaigns</span><b>${campaigns.length}</b></div>
 <div class="card"><span>Observed networks</span><b>${BRAND.observedConnectedNetworks.length}</b></div>
