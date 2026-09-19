@@ -1,0 +1,20 @@
+{
+  "PlatformName": "RTPSC - Ross Tax Pro Software Co.",
+  "DeploymentTarget": "Production",
+  "ExecutionPolicies": {
+    "CeleryWorkers": {
+      "RuntimeLimits": {
+        "MaxMemoryMB": 4096,
+        "MaxCPUCores": 2,
+        "TimeoutSeconds": 120
+      },
+      "NetworkEgress": {
+        "AllowedEndpoints": [
+          "https://tpiuxyxofggsossstyik.supabase.co",
+          "https://la.www4.irs.gov",
+          "https://tds.irs.gov"
+        ]
+      }
+    }
+  }
+}
