@@ -1,0 +1,87 @@
+name: TAXPRAC Security CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install pinned application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pip-audit bandit
+
+      - name: Compile application
+        run: python -m compileall -q api_server.py celery_worker.py
+
+      - name: Dependency vulnerability audit
+        run: pip-audit -r requirements.txt
+
+      - name: Static security analysis
+        run: bandit -q -r api_server.py celery_worker.py
+
+      - name: Production data and secret policy scan
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          prohibited = {
+              "ssn-pattern": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
+              "supabase-inline-key": re.compile(r"sb_(?:publishable|secret)_[A-Za-z0-9_-]+"),
+              "aws-access-key": re.compile(r"AKIA[0-9A-Z]{16}"),
+              "legacy-demo-data": re.compile(r"Demo Client|QA Sample|mock_data", re.I),
+              "hard-coded-caf": re.compile(r"CAF_NUMBER\s*=|caf_number\s*:\s*str\s*="),
+          }
+
+          failures = []
+          for path in Path(".").rglob("*"):
+              if not path.is_file() or ".git" in path.parts:
+                  continue
+              if path.suffix.lower() in {".zip", ".png", ".jpg", ".jpeg", ".webp", ".pdf"}:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              for name, pattern in prohibited.items():
+                  if pattern.search(text):
+                      failures.append(f"{name}: {path}")
+
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          PY
+
+  terraform-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: "1.10.5"
+
+      - name: Terraform format
+        run: terraform -chdir=infra/aws fmt -check -recursive
+
+      - name: Terraform initialize without backend
+        run: terraform -chdir=infra/aws init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=infra/aws validate
