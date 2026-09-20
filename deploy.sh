@@ -1,16 +1,29 @@
-#!/bin/bash
-set -e
-echo "[RTPSC Deployment] Initializing deployment sequence for CAF: 0316-76228R..."
+#!/usr/bin/env bash
+set -euo pipefail
 
-if [ ! -f .env.production ]; then
-    cat <<EOF > .env.production
-EXPO_PUBLIC_SUPABASE_URL=https://tpiuxyxofggsossstyik.supabase.co
-EXPO_PUBLIC_SUPABASE_KEY=sb_publishable_Fus5iPRQ5-jIV3ePOVxneg_0s8VLQtf
-REDIS_URL=redis://redis-broker:6379/0
-CAF_NUMBER=0316-76228R
-EOF
+echo "[RTPSC TAXPRAC] Local container validation only."
+echo "[RTPSC TAXPRAC] Production infrastructure is deployed through reviewed IaC/CI."
+
+if [[ "${ALLOW_LOCAL_COMPOSE:-false}" != "true" ]]; then
+  echo "Refusing to start local containers without ALLOW_LOCAL_COMPOSE=true."
+  exit 1
 fi
 
-docker-compose build --no-cache
-docker-compose up -d
-echo "[RTPSC Deployment] SUCCESS: RTPSC Platform is LIVE."
+required_vars=(
+  SUPABASE_URL
+  SUPABASE_PUBLISHABLE_KEY
+)
+
+for name in "${required_vars[@]}"; do
+  if [[ -z "${!name:-}" ]]; then
+    echo "Missing required environment variable: ${name}"
+    exit 1
+  fi
+done
+
+docker compose config --quiet
+docker compose build --no-cache
+docker compose up -d
+
+echo "[RTPSC TAXPRAC] Local validation stack started."
+echo "[RTPSC TAXPRAC] This output is not evidence of a production deployment."
