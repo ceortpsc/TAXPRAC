@@ -1,0 +1,74 @@
+name: TAXPRAC AWS Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type DEPLOY to apply the reviewed Terraform plan"
+        required: true
+        default: "PLAN_ONLY"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: taxprac-production
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Require configured AWS OIDC role
+        shell: bash
+        run: |
+          test -n "${{ vars.AWS_ROLE_ARN }}" || {
+            echo "AWS_ROLE_ARN repository/environment variable is not configured."
+            exit 1
+          }
+          test -n "${{ vars.AWS_PRIMARY_REGION }}" || {
+            echo "AWS_PRIMARY_REGION repository/environment variable is not configured."
+            exit 1
+          }
+
+      - uses: aws-actions/configure-aws-credentials@v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_PRIMARY_REGION }}
+          role-session-name: taxprac-github-${{ github.run_id }}
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: "1.10.5"
+
+      - name: Terraform init
+        run: terraform -chdir=infra/aws init
+
+      - name: Terraform plan
+        run: terraform -chdir=infra/aws plan -out=tfplan
+
+      - name: Apply reviewed production plan
+        if: ${{ inputs.apply == 'DEPLOY' }}
+        run: terraform -chdir=infra/aws apply -auto-approve tfplan
+
+      - name: Release evidence
+        run: |
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "actor=${GITHUB_ACTOR}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "ref=${GITHUB_REF}"
+            date -u +"timestamp=%Y-%m-%dT%H:%M:%SZ"
+          } | tee production-release-metadata.txt
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: production-release-metadata-${{ github.sha }}
+          path: production-release-metadata.txt
+          retention-days: 90
