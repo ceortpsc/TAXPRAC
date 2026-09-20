@@ -1,33 +1,80 @@
+import hmac
 import os
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from pydantic import BaseModel
 from typing import List, Optional
-from celery_worker import sync_client_masterfile, process_irs_acknowledgment
-from supabase import create_client, Client
 
-app = FastAPI(title="RTPSC Background API Server", version="1.0.0")
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+from supabase import Client, create_client
 
-SUPABASE_URL = os.getenv("EXPO_PUBLIC_SUPABASE_URL", "https://tpiuxyxofggsossstyik.supabase.co")
-SUPABASE_KEY = os.getenv("EXPO_PUBLIC_SUPABASE_KEY", "sb_publishable_Fus5iPRQ5-jIV3ePOVxneg_0s8VLQtf")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+from celery_worker import process_provider_acknowledgment, sync_client_masterfile
+
+
+def required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Required environment variable is not configured: {name}")
+    return value
+
+
+app = FastAPI(
+    title="RTPSC TAXPRAC Background API",
+    version="25.78.1",
+    docs_url=None,
+    redoc_url=None,
+)
+
+SUPABASE_URL = required_env("SUPABASE_URL")
+SUPABASE_PUBLISHABLE_KEY = required_env("SUPABASE_PUBLISHABLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+
 
 class SyncRequest(BaseModel):
     client_id: str
-    ssn_last_four: str
-    caf_number: str = "0316-76228R"
+    office_id: str
 
-class IRSAckPayload(BaseModel):
+
+class ProviderAckPayload(BaseModel):
     submission_id: str
     status: str
     timestamp: str
     errors: Optional[List[str]] = None
+    source: str
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok", "service": "taxprac-background-api"}
+
 
 @app.post("/api/v1/clients/sync")
 async def trigger_client_sync(request: SyncRequest):
-    task = sync_client_masterfile.delay(request.client_id, request.ssn_last_four, request.caf_number)
-    return {"status": "QUEUED", "task_id": task.id}
+    task = sync_client_masterfile.delay(request.client_id, request.office_id)
+    return {
+        "status": "QUEUED",
+        "task_id": task.id,
+        "external_government_data": False,
+    }
 
-@app.post("/api/v1/webhooks/irs/ack")
-async def irs_acknowledgment_webhook(payload: IRSAckPayload):
-    process_irs_acknowledgment.delay(payload.dict())
-    return {"status": "RECEIVED"}
+
+@app.post("/api/v1/webhooks/adapter/ack")
+async def provider_acknowledgment_webhook(
+    payload: ProviderAckPayload,
+    x_rtpsc_adapter_token: Optional[str] = Header(default=None),
+):
+    if os.getenv("ACK_ADAPTER_ENABLED", "false").lower() != "true":
+        raise HTTPException(
+            status_code=503,
+            detail="External acknowledgement adapter is not enabled.",
+        )
+
+    expected = required_env("ACK_ADAPTER_TOKEN")
+    supplied = x_rtpsc_adapter_token or ""
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid adapter authentication.")
+
+    process_provider_acknowledgment.delay(payload.model_dump())
+    return {
+        "status": "RECEIVED",
+        "source": payload.source,
+        "verification": "AUTHORIZED_ADAPTER_IMPORT",
+    }
