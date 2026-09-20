@@ -1,5 +1,5 @@
 {
-  "PlatformName": "RTPSC - Ross Tax Pro Software Co.",
+  "PlatformName": "RTPSC TAXPRAC Enterprise Suite",
   "DeploymentTarget": "Production",
   "ExecutionPolicies": {
     "CeleryWorkers": {
@@ -9,11 +9,15 @@
         "TimeoutSeconds": 120
       },
       "NetworkEgress": {
-        "AllowedEndpoints": [
-          "https://tpiuxyxofggsossstyik.supabase.co",
-          "https://la.www4.irs.gov",
-          "https://tds.irs.gov"
-        ]
+        "Default": "DENY",
+        "AllowedEndpointClasses": [
+          "Configured database service",
+          "Explicitly authorized provider adapters"
+        ],
+        "GovernmentAdapters": {
+          "Status": "GATED",
+          "Rule": "No IRS, Treasury, MeF, TDS, FIRE, A2A, transcript, refund, or other government endpoint may be contacted unless a documented enrolled adapter is separately configured, authenticated, and approved."
+        }
       }
     }
   }
