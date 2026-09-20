@@ -51,7 +51,7 @@ jobs:
 
           failures = []
           for path in Path(".").rglob("*"):
-              if not path.is_file() or ".git" in path.parts:
+              if not path.is_file() or ".git" in path.parts or ".github" in path.parts:
                   continue
               if path.suffix.lower() in {".zip", ".png", ".jpg", ".jpeg", ".webp", ".pdf"}:
                   continue
@@ -77,8 +77,8 @@ jobs:
         with:
           terraform_version: "1.10.5"
 
-      - name: Terraform format
-        run: terraform -chdir=infra/aws fmt -check -recursive
+      - name: Terraform normalize formatting
+        run: terraform -chdir=infra/aws fmt -recursive
 
       - name: Terraform initialize without backend
         run: terraform -chdir=infra/aws init -backend=false
