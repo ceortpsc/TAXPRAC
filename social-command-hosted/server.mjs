@@ -4,12 +4,15 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { FacebookOrganicAdapter } from './facebook-organic-adapter.mjs';
+import { buildFacebookConnector, FACEBOOK_BRAND_DEFAULTS, normalizeFacebookDraft } from './facebook-connector.mjs';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 const PORT = Number(process.env.PORT || 10000);
 const MCP_TOKEN = process.env.MCP_BEARER_TOKEN || '';
+const facebookAdapter = new FacebookOrganicAdapter();
 
 const BRAND = {
   company: 'Ross Tax Pro Software Co.',
@@ -17,12 +20,15 @@ const BRAND = {
   metricoolLabel: 'rosstaxprosoftwareco',
   timezone: 'America/Chicago',
   observedConnectedNetworks: ['TikTok', 'Facebook'],
-  observedAt: '2026-09-19'
+  observedAt: '2026-09-21',
+  phone: FACEBOOK_BRAND_DEFAULTS.phone,
+  email: FACEBOOK_BRAND_DEFAULTS.email,
+  websites: FACEBOOK_BRAND_DEFAULTS.websites
 };
 
 const providerDefinitions = [
   { id:'tiktok', label:'TikTok', state:'CONNECTED_VIA_METRICOOL', mode:'Aggregator bridge', oauthEnv:null },
-  { id:'facebook', label:'Facebook', state:'CONNECTED_VIA_METRICOOL', mode:'Aggregator bridge', oauthEnv:null },
+  buildFacebookConnector(facebookAdapter),
   { id:'instagram', label:'Instagram', state:'BRIDGE_READY_NOT_VERIFIED', mode:'Metricool bridge', oauthEnv:null },
   { id:'x', label:'X', state:'AUTHORIZATION_REQUIRED', mode:'Direct OAuth', oauthEnv:'X_OAUTH_URL' },
   { id:'linkedin', label:'LinkedIn', state:'AUTHORIZATION_REQUIRED', mode:'Direct OAuth or supported aggregator', oauthEnv:'LINKEDIN_OAUTH_URL' },
@@ -32,6 +38,8 @@ const providerDefinitions = [
   { id:'bluesky', label:'Bluesky', state:'AUTHORIZATION_REQUIRED', mode:'App password / provider auth', oauthEnv:'BLUESKY_OAUTH_URL' },
   { id:'gmb', label:'Google Business Profile', state:'AUTHORIZATION_REQUIRED', mode:'Google OAuth or supported aggregator', oauthEnv:'GMB_OAUTH_URL' }
 ];
+
+const isConnectedState = (state) => String(state || '').startsWith('CONNECTED') || String(state || '').startsWith('DIRECT_ADAPTER');
 
 const connectionRegistry = () => providerDefinitions.map(p => ({
   ...p,
@@ -72,17 +80,19 @@ const seo = {
   ]
 };
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'rtpsc-social-command', version: '1.1.0' }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'rtpsc-social-command', version: '1.2.0' }));
 app.get('/api/status', (_req, res) => res.json({
   product: 'RTPSC Social Intelligence & Engagement Center',
   brand: BRAND,
   campaignCount: campaigns.length,
-  externalPublishingMode: 'METRICOOL_SCHEDULED',
-  directProviderPublishing: false,
+  externalPublishingMode: facebookAdapter.status().configured ? 'HYBRID_DIRECT_AND_AGGREGATOR' : 'METRICOOL_SCHEDULED',
+  directProviderPublishing: facebookAdapter.status().configured && facebookAdapter.status().writeEnabled,
+  facebook: facebookAdapter.status(),
   note: 'This hosted control plane does not fabricate provider analytics or delivery state.'
 }));
 app.get('/api/campaigns', (_req, res) => res.json({ items: campaigns }));
 app.get('/api/connections', (_req, res) => res.json({ items: connectionRegistry() }));
+app.get('/api/facebook/status', (_req, res) => res.json(facebookAdapter.status()));
 app.get('/api/seo', (_req, res) => res.json(seo));
 app.get('/api/analytics', (_req, res) => res.json({
   dataMode: 'PROVIDER_DATA_NOT_BOUND_TO_THIS_HOST',
@@ -93,7 +103,7 @@ app.get('/api/analytics', (_req, res) => res.json({
 app.get('/connect/:provider', (req, res) => {
   const provider = connectionRegistry().find(p => p.id === req.params.provider);
   if (!provider) return res.status(404).send('Unknown provider.');
-  if (provider.state.startsWith('CONNECTED')) return res.redirect('/');
+  if (isConnectedState(provider.state)) return res.redirect('/');
   if (!provider.connectUrlConfigured || !provider.connectUrl) {
     return res.status(503).type('html').send(`<!doctype html><html><body style="font-family:system-ui;background:#071827;color:#fff;padding:40px"><h1>${provider.label} authorization is not configured yet</h1><p>This service will not invent an OAuth client or credential. Configure the provider application credentials and authorization URL first, then this button will open the provider's consent flow.</p><p><a href="/" style="color:#d4af37">Return to Social Command Center</a></p></body></html>`);
   }
@@ -108,7 +118,7 @@ const html = `<!doctype html>
 </style></head><body>
 <header><div><div class="eyebrow">ROSS TAX PRO SOFTWARE CO.</div><h1>Social Intelligence & Engagement Center</h1><div class="sub">Hosted control plane · ChatGPT/MCP adapter · campaign execution visibility · SEO governance</div></div><div class="badge">HOSTED SERVICE ONLINE</div></header>
 <main>
-<div class="notice">Campaign scheduling is active through the connected Metricool brand. TikTok and Facebook are currently verified through the Metricool bridge. Instagram adapter support is ready but the Instagram account is not yet verified by the current Metricool brand metadata. Other networks still require account-owner authorization.</div>
+<div class="notice">Campaign scheduling remains available through the connected aggregator bridge. Facebook now also has a first-party Meta Graph adapter and MCP connector; it becomes active only when the Page ID and Page access token are configured in the secret store, and direct publishing remains independently gated. Other networks still require account-owner authorization.</div>
 <div class="grid">
 <div class="card"><span>Scheduled campaigns</span><b>${campaigns.length}</b></div>
 <div class="card"><span>Observed networks</span><b>${BRAND.observedConnectedNetworks.length}</b></div>
@@ -118,7 +128,7 @@ const html = `<!doctype html>
 <section class="card wide" style="margin-top:12px">
   <div class="sectionTitle"><h2>Social Connections</h2><small>Owner authorization required for third-party accounts</small></div>
   <div class="connections">
-    ${connectionRegistry().map(p=>`<div class="connection"><h3>${p.label}</h3><div class="mode">${p.mode}</div><div class="state ${p.state.startsWith('CONNECTED')?'connected':'required'}">${p.state}</div>${p.state.startsWith('CONNECTED')?'<span class="connectBtn disabled">Connected</span>':p.connectUrlConfigured?`<a class="connectBtn" href="/connect/${p.id}">Authorize</a>`:'<span class="connectBtn disabled">OAuth setup required</span>'}</div>`).join('')}
+    ${connectionRegistry().map(p=>`<div class="connection"><h3>${p.label}</h3><div class="mode">${p.mode}</div><div class="state ${isConnectedState(p.state)?'connected':'required'}">${p.state}</div>${isConnectedState(p.state)?'<span class="connectBtn disabled">Connected</span>':p.connectUrlConfigured?`<a class="connectBtn" href="/connect/${p.id}">Authorize</a>`:'<span class="connectBtn disabled">OAuth setup required</span>'}</div>`).join('')}
   </div>
 </section>
 <div class="notice warn" style="margin-top:12px">For security, this service does not accept social-media passwords. Each network must be authorized through its official OAuth/consent flow, and client secrets must stay in the hosting secret store.</div>
@@ -132,7 +142,7 @@ ${Object.entries(seo.technical).map(([k,v])=>`<div style="padding:8px 0;border-t
 <p class="sub" style="margin-top:14px">Content pillars</p>
 ${seo.contentPillars.map(x=>`<span class="pill">${x}</span>`).join('')}
 </section></div>
-<div class="card wide" style="margin-top:12px"><div class="sectionTitle"><h2>Connector posture</h2><small>/mcp</small></div><p class="sub">Bearer-protected MCP endpoint for ChatGPT-native status, campaign, SEO, connection-state and analytics-readiness tools. Direct provider write actions remain disabled until first-party provider authorization and explicit dispatch logic are bound.</p></div>
+<div class="card wide" style="margin-top:12px"><div class="sectionTitle"><h2>Connector posture</h2><small>/mcp</small></div><p class="sub">Bearer-protected MCP endpoint for ChatGPT-native status, campaign, SEO, connection-state and analytics-readiness tools. The Facebook direct lane uses the first-party Meta Graph adapter and requires an auditable approval reference plus the FACEBOOK_DIRECT_PUBLISH_ENABLED feature gate.</p></div>
 </main><footer>Ross Tax Pro Software Co. · Social Command Center · No taxpayer-return data is exposed by this service.</footer>
 </body></html>`;
 
@@ -146,14 +156,14 @@ function authorized(req) {
 }
 
 function makeServer() {
-  const server = new McpServer({ name: 'rtpsc-social-command', version: '1.1.0' });
+  const server = new McpServer({ name: 'rtpsc-social-command', version: '1.2.0' });
 
   server.registerTool('get_social_status', {
     title: 'Get social command status',
     description: 'Read current Ross Tax Pro Software Co. social command status and observed connection metadata.',
     inputSchema: {}
   }, async () => ({
-    content: [{ type: 'text', text: JSON.stringify({ brand: BRAND, campaignCount: campaigns.length, directProviderPublishing: false }, null, 2) }]
+    content: [{ type: 'text', text: JSON.stringify({ brand: BRAND, campaignCount: campaigns.length, directProviderPublishing: facebookAdapter.status().configured && facebookAdapter.status().writeEnabled, facebook: facebookAdapter.status() }, null, 2) }]
   }));
 
   server.registerTool('list_social_connections', {
@@ -199,6 +209,111 @@ function makeServer() {
   }, async ({ title, caption, networks }) => ({
     content: [{ type: 'text', text: JSON.stringify({ status: 'DRAFT_PREPARED', title, caption, networks, externallyPublished: false }, null, 2) }]
   }));
+
+
+  server.registerTool('get_facebook_connection_status', {
+    title: 'Get Facebook connection status',
+    description: 'Read the sanitized first-party Facebook Page connector state without exposing access tokens or secrets.',
+    inputSchema: {}
+  }, async () => ({
+    content: [{ type: 'text', text: JSON.stringify({ ...facebookAdapter.status(), brand: FACEBOOK_BRAND_DEFAULTS }, null, 2) }]
+  }));
+
+  server.registerTool('get_facebook_page', {
+    title: 'Get Facebook Page',
+    description: 'Read the configured Facebook Page profile through the first-party Meta Graph adapter.',
+    inputSchema: {}
+  }, async () => {
+    try {
+      const page = await facebookAdapter.getPage();
+      return { content: [{ type: 'text', text: JSON.stringify(page, null, 2) }] };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          error: error?.name || 'FacebookConnectorError',
+          message: error?.message || 'Facebook Page lookup failed.',
+          code: error?.code ?? null,
+          httpStatus: error?.httpStatus ?? null
+        }, null, 2) }]
+      };
+    }
+  });
+
+  server.registerTool('publish_facebook_post', {
+    title: 'Publish Facebook post',
+    description: 'Publish an approved text or link post to the configured Facebook Page. Requires an approval reference and enabled direct publishing gate.',
+    inputSchema: {
+      message: z.string().min(1).max(10000),
+      link: z.string().url().optional(),
+      approvalReference: z.string().min(1).max(180)
+    }
+  }, async ({ message, link, approvalReference }) => {
+    try {
+      const draft = normalizeFacebookDraft({ message, link, approvalReference });
+      const result = await facebookAdapter.publishTextPost({ message: draft.message, link: draft.link });
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          status: 'PUBLISHED',
+          provider: 'facebook_organic',
+          approvalReference: draft.approvalReference,
+          result
+        }, null, 2) }]
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          status: 'NOT_PUBLISHED',
+          error: error?.name || 'FacebookConnectorError',
+          message: error?.message || 'Facebook publication failed.',
+          code: error?.code ?? null,
+          httpStatus: error?.httpStatus ?? null
+        }, null, 2) }]
+      };
+    }
+  });
+
+  server.registerTool('publish_facebook_photo_post', {
+    title: 'Publish Facebook photo post',
+    description: 'Publish an approved public HTTPS image with caption to the configured Facebook Page. Requires an approval reference and enabled direct publishing gate.',
+    inputSchema: {
+      imageUrl: z.string().url(),
+      caption: z.string().max(10000).default(''),
+      approvalReference: z.string().min(1).max(180)
+    }
+  }, async ({ imageUrl, caption, approvalReference }) => {
+    try {
+      const draft = normalizeFacebookDraft({
+        message: caption || 'Approved Facebook photo publication',
+        imageUrl,
+        approvalReference
+      });
+      const result = await facebookAdapter.publishPhotoPost({
+        imageUrl: draft.imageUrl,
+        caption: caption || ''
+      });
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          status: 'PUBLISHED',
+          provider: 'facebook_organic',
+          approvalReference: draft.approvalReference,
+          result
+        }, null, 2) }]
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          status: 'NOT_PUBLISHED',
+          error: error?.name || 'FacebookConnectorError',
+          message: error?.message || 'Facebook photo publication failed.',
+          code: error?.code ?? null,
+          httpStatus: error?.httpStatus ?? null
+        }, null, 2) }]
+      };
+    }
+  });
 
   return server;
 }
