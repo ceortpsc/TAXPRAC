@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 170" role="img" aria-labelledby="title desc">
+  <title id="title">RTPSC Ross Tax Pro Software Co.</title>
+  <desc id="desc">Navy, silver, and gold enterprise tax software wordmark.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" x2="1">
+      <stop offset="0" stop-color="#F7E5A2"/>
+      <stop offset=".5" stop-color="#C9A24A"/>
+      <stop offset="1" stop-color="#FBE9AA"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" x2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".55" stop-color="#C8D1DA"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(12,15)">
+    <path d="M0 0h132l-32 28H50v104H12V28z" fill="url(#silver)"/>
+    <path d="M28 44h68l38 88H96L67 67H28z" fill="url(#gold)"/>
+    <path d="M74 13l20-13 19 18-17 5z" fill="url(#gold)"/>
+  </g>
+  <g transform="translate(175,34)">
+    <text x="0" y="49" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900" letter-spacing="3" fill="url(#gold)">RTPSC</text>
+    <text x="2" y="87" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="4" fill="url(#silver)">ROSS TAX PRO SOFTWARE CO.</text>
+    <line x1="2" y1="104" x2="610" y2="104" stroke="#C9A24A" stroke-width="2"/>
+    <text x="2" y="133" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="3" fill="#C8D1DA">PEOPLE • PROCESS • PROSPERITY</text>
+  </g>
+</svg>
