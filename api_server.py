@@ -3,10 +3,12 @@ import os
 from typing import List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supabase import Client, create_client
 
+from avalon_engine import execute_calculation, policy_payload
 from celery_worker import process_provider_acknowledgment, sync_client_masterfile
+from proavalon import assist as proavalon_assist
 
 
 def required_env(name: str) -> str:
@@ -18,7 +20,7 @@ def required_env(name: str) -> str:
 
 app = FastAPI(
     title="RTPSC TAXPRAC Background API",
-    version="25.78.1",
+    version="26.9.22",
     docs_url=None,
     redoc_url=None,
 )
@@ -41,9 +43,44 @@ class ProviderAckPayload(BaseModel):
     source: str
 
 
+class AvalonCalculationRequest(BaseModel):
+    operation: str
+    values: List[float]
+    tax_year: int = Field(default=2025, ge=2020, le=2026)
+
+
+class ProAvalonRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    tax_year: int = Field(default=2025, ge=2020, le=2026)
+
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok", "service": "taxprac-background-api"}
+
+
+@app.get("/api/v1/avalon/policy")
+async def avalon_policy():
+    return policy_payload()
+
+
+@app.post("/api/v1/avalon/calculate")
+async def avalon_calculate(request: AvalonCalculationRequest):
+    policy = policy_payload()
+    year_state = policy["year_policy"].get(request.tax_year, "UNSUPPORTED_YEAR")
+    result = execute_calculation(request.operation, request.values)
+    return {
+        "status": "COMPLETED",
+        "tax_year": request.tax_year,
+        "tax_year_status": year_state,
+        "calculation": result,
+        "external_government_data": False,
+    }
+
+
+@app.post("/api/v1/proavalon/assist")
+async def proavalon(request: ProAvalonRequest):
+    return proavalon_assist(request.prompt, request.tax_year)
 
 
 @app.post("/api/v1/clients/sync")
