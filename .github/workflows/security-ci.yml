@@ -26,13 +26,16 @@ jobs:
           python -m pip install pip-audit bandit
 
       - name: Compile application
-        run: python -m compileall -q api_server.py celery_worker.py
+        run: python -m compileall -q api_server.py celery_worker.py avalon_engine.py proavalon.py
+
+      - name: Run deterministic engine tests
+        run: python -m unittest discover -s tests -v
 
       - name: Dependency vulnerability audit
         run: pip-audit -r requirements.txt
 
       - name: Static security analysis
-        run: bandit -q -r api_server.py celery_worker.py
+        run: bandit -q -r api_server.py celery_worker.py avalon_engine.py proavalon.py
 
       - name: Production data and secret policy scan
         run: |
@@ -67,6 +70,23 @@ jobs:
               print("\n".join(failures))
               sys.exit(1)
           PY
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Build Next.js marketing and Avalon frontend
+        run: npm run build
 
   terraform-validation:
     runs-on: ubuntu-latest
